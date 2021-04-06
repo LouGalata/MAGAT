@@ -95,7 +95,8 @@ class Scenario(BaseScenario):
         dists = [np.sqrt(np.sum(np.sqrt(agent.state.p_pos - l.state.p_pos))) for l in world.landmarks]
         if min(dists) > 2:
             done = True
-        return False
+        return done
+
 
     def observation(self, agent, world):
         # get positions of all entities in this agent's reference frame

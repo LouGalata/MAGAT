@@ -4,8 +4,7 @@
 import os
 import time
 
-# for saving gif
-import imageio
+
 import numpy as np
 import torch
 from tensorboardX import SummaryWriter
@@ -20,8 +19,8 @@ BUFFER_SIZE = int(1e6)  # Replay buffer size
 BATCH_SIZE = 512  # Mini batch size
 GAMMA = 0.95  # Discount factor
 TAU = 0.01  # For soft update of target parameters
-LR_ACTOR = 1e-2  # Learning rate of the actor
-LR_CRITIC = 1e-2  # Learning rate of the critic
+LR_ACTOR = 1e-3  # Learning rate of the actor
+LR_CRITIC = 1e-3  # Learning rate of the critic
 WEIGHT_DECAY = 1e-5  # L2 weight decay
 UPDATE_EVERY = 30  # How many steps to take before updating target networks
 UPDATE_TIMES = 20  # Number of times we update the networks
@@ -45,7 +44,7 @@ def make_env(scenario_name, no_agents) -> MultiAgentEnv:
 
 def seeding(seed=1):
     np.random.seed(seed)
-    torch.manual_seed(seed)
+    # torch.manual_seed(seed)
 
 
 def pre_process(entity, batchsize):
@@ -89,9 +88,10 @@ def main():
     os.makedirs(model_dir, exist_ok=True)
 
     # initialize environment
-    torch.set_num_threads(parallel_envs)
+    # torch.set_num_threads(parallel_envs)
     env = envs.make_parallel_env(parallel_envs, seed=3, benchmark=BENCHMARK)
-    # env = make_env(scenario_name, num_agents)
+    # env = envs.make_env("simple_spread_ivan")
+
     # initialize replay buffer
     buffer = ReplayBuffer(int(BUFFER_SIZE))
 
@@ -126,6 +126,9 @@ def main():
         all_obs = env.reset()  #
 
         # flip the first two indices
+        # ADD FOR WITHOUT PARALLEL ENV
+        # all_obs = np.expand_dims(all_obs, axis=0)
+
         obs_roll = np.rollaxis(all_obs, 1)
         obs = transpose_list(obs_roll)
 
@@ -155,12 +158,14 @@ def main():
             # environment step
             # step forward one frame
             # next_obs, next_obs_full, rewards, dones, info = env.step(actions_for_env)
+
+            # ADD FOR WITHOUT PARALLEL ENV
+            # next_obs, rewards, dones, info = env.step(actions_for_env)
             next_obs, rewards, dones, info = env.step(actions_for_env)
+
             # rewards_sum += np.mean(rewards)
 
             # collect experience
-            # add data to buffer
-            # transition = (obs, obs_full, actions_for_env, rewards, next_obs, next_obs_full, dones)
             transition = (obs, actions_for_env, rewards, next_obs, dones)
             buffer.push(transition)
 

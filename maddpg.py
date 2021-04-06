@@ -10,8 +10,7 @@ from utilities import soft_update, transpose_to_tensor, transpose_list, gumbel_s
 import numpy as np
 
 # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-device = 'cpu'
-
+device = torch.device("cuda:0" if True else "cpu")
 
 class MADDPG:
     def __init__(self, num_agents=3, discount_factor=0.95, tau=0.02, lr_actor=1.0e-2, lr_critic=1.0e-2,
@@ -110,7 +109,7 @@ class MADDPG:
         # next_obs_full = torch.stack(next_obs_full)
 
         adj = [self.get_adj(i) for i in np.swapaxes(np.array([x.numpy() for x in obs]), 1, 0)]
-        adj = torch.Tensor(adj)
+        adj = torch.Tensor(adj).to(device)
         obs_full = torch.cat(obs, dim=1)
         next_obs_full = torch.cat(next_obs, dim=1)
 
@@ -128,7 +127,7 @@ class MADDPG:
         # target_critic_input = torch.cat((next_obs_full.t(),target_actions_next), dim=1).to(device)
         target_critic_input = torch.cat((next_obs_full, target_actions_next_cat), dim=1).to(device)
 
-        target_critic_input_gat = torch.cat( (torch.stack(obs), torch.stack(target_actions_next)), dim=2).permute(1,0,2)
+        target_critic_input_gat = torch.cat( (torch.stack(obs), torch.stack(target_actions_next)), dim=2).permute(1,0,2).to(device)
         with torch.no_grad():
             q_next = agent.target_critic(target_critic_input_gat, adj)
 
@@ -141,7 +140,9 @@ class MADDPG:
         action_cat = torch.cat(action, dim=1)
         # critic_input = torch.cat((obs_full.t(), action), dim=1).to(device)
         critic_input = torch.cat((obs_full, action_cat), dim=1).to(device)
-        critic_input_gat = torch.cat((torch.stack(next_obs), torch.stack(action)), dim=2).permute(1, 0, 2)
+        stack_obs = torch.stack(next_obs).to(device)
+        stack_act = torch.stack(action).to(device)
+        critic_input_gat = torch.cat((stack_obs, stack_act), dim=2).permute(1, 0, 2).to(device)
         q = agent.critic(critic_input_gat, adj)  # doing forward(...)
 
         # Priorized Experience Replay
@@ -160,6 +161,7 @@ class MADDPG:
         # Minimize the loss
         critic_loss.backward()
         torch.nn.utils.clip_grad_norm_(agent.critic.parameters(), 0.5)
+        torch.nn.utils.clip_grad_value_(agent.critic.parameters(), 1.0)
         agent.critic_optimizer.step()
 
         # ---------------------------- update actor ---------------------------- #
@@ -167,7 +169,8 @@ class MADDPG:
         # Compute actor loss
         agent.actor_optimizer.zero_grad()
         # make input to agent
-        curr_q_input = self.maddpg_agent[agent_number].actor(obs[agent_number])
+        obs_input = obs[agent_number].to(device)
+        curr_q_input = self.maddpg_agent[agent_number].actor(obs_input)
         # use Gumbel-Softmax sample
         # curr_q_input = gumbel_softmax(curr_q_input, hard = True) # this should be used only if the action is discrete (for example in comunications, but in general the action is not discrete)
         # detach the other agents to save computation
@@ -179,12 +182,14 @@ class MADDPG:
                        else self.maddpg_agent[i].actor(ob.to(device)).detach()
                    for i, ob in enumerate(obs)]
 
-        q_input_cat = torch.cat(q_input, dim=1)
+        q_input_cat = torch.cat(q_input, dim=1).to(device)
         # combine all the actions and observations for input to critic
         # many of the obs are redundant, and obs[1] contains all useful information already
         # q_input2 = torch.cat((obs_full.t(), q_input), dim=1)
         q_input2 = torch.cat((obs_full.to(device), q_input_cat), dim=1)
-        q_input_gat = torch.cat((torch.stack(obs), torch.stack(q_input)), dim=2).permute(1, 0, 2)
+        obs_st = torch.stack(obs).to(device)
+        q_st = torch.stack(q_input).to(device)
+        q_input_gat = torch.cat((obs_st, q_st), dim=2).permute(1, 0, 2).to(device)
         actor_loss = -agent.critic(q_input_gat, adj).mean()  # get the policy gradient  # TODO: add the adjacency
         # modification from https://github.com/shariqiqbal2810/maddpg-pytorch/blob/master/algorithms/maddpg.py
         actor_loss += (curr_q_input).mean() * 1e-3

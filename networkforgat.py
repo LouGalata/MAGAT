@@ -30,7 +30,7 @@ class GAT(nn.Module):
         x = f.dropout(x, self.dropout, training=self.training)
         x = f.elu(self.out_att(x, adj))
         return x
-
+        # return F.log_softmax(x, dim=1)
 
 
 class CriticNetwork(nn.Module):
@@ -47,6 +47,13 @@ class CriticNetwork(nn.Module):
                     nheads=4,
                     alpha=0.1)
 
+        # self.gat2 = GAT(nfeat=input_dim,
+        #             nhid=hidden_gat_dim,
+        #             nclass=input_dim,
+        #             dropout=0.0,
+        #             nheads=4,
+        #             alpha=0.1)
+
         dense_input_dim = input_dim * 5 * 2 # num_agents * res connections
         self.fc1 = nn.Linear(dense_input_dim, hidden_in_dim)
         self.fc2 = nn.Linear(hidden_in_dim, hidden_out_dim)
@@ -56,7 +63,8 @@ class CriticNetwork(nn.Module):
         # self.reset_parameters()
 
     def reset_parameters(self):
-        self.gat.weight.data.uniform_(*hidden_init(self.fc1))
+        self.gat.weight.data.uniform_(*hidden_init(self.gat))
+        # self.gat2.weight.data.uniform_(*hidden_init(self.fc1))
         self.fc1.weight.data.uniform_(*hidden_init(self.fc1))
         self.fc2.weight.data.uniform_(*hidden_init(self.fc2))
         self.fc3.weight.data.uniform_(-1e-3, 1e-3)

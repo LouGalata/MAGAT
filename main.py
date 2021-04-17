@@ -21,30 +21,15 @@ GAMMA = 0.95  # Discount factor
 TAU = 0.01  # For soft update of target parameters
 LR_ACTOR = 1e-3  # Learning rate of the actor
 LR_CRITIC = 1e-3  # Learning rate of the critic
-WEIGHT_DECAY = 1e-5  # L2 weight decay
+WEIGHT_DECAY = 0  # L2 weight decay
 UPDATE_EVERY = 30  # How many steps to take before updating target networks
 UPDATE_TIMES = 20  # Number of times we update the networks
 SEED = 3  # Seed for random numbers
 BENCHMARK = False
 
-def make_env(scenario_name, no_agents) -> MultiAgentEnv:
-    """
-    Create an environment
-    :param scenario_name:
-    :return:
-    """
-    import multiagent.scenarios as scenarios
-
-    # load scenario from script
-    scenario = scenarios.load(scenario_name + '.py').Scenario()
-    # create world
-    world = scenario.make_world(no_agents=no_agents)
-    env = MultiAgentEnv(world, scenario.reset_world, scenario.reward, scenario.observation)
-    return env
-
 def seeding(seed=1):
     np.random.seed(seed)
-    # torch.manual_seed(seed)
+    torch.manual_seed(seed)
 
 
 def pre_process(entity, batchsize):
@@ -68,7 +53,7 @@ def main():
     # number of training episodes.
     # change this to higher number to experiment. say 30000.
     number_of_episodes = 60000
-    episode_length = 25
+    episode_length = 35
     # how many episodes to save policy and gif
     save_interval = 1000
     t = 0
@@ -76,8 +61,11 @@ def main():
 
     # amplitude of OU noise
     # this slowly decreases to 0
-    noise = 0.1  # was 2, try 0.5
-    noise_reduction = 0.999
+    noise = 0.5  # was 2, try 0.5, 0.2
+    noise_reduction = 0.9999  # 0.999
+    #### DECAY
+    initial_noise = 0.1
+    decay = 0.01
 
     # how many episodes before update
     # episode_per_update = UPDATE_EVERY * parallel_envs
@@ -146,7 +134,9 @@ def main():
             # explore = only explore for a certain number of episodes
             # action input needs to be transposed
             actions = maddpg.act(transpose_to_tensor(obs), noise=noise)
-            noise *= noise_reduction
+
+            noise = max(initial_noise * decay ** (episode_t / 20000), 0.001)
+            # noise = max(noise*noise_reduction, 0.001)
 
             actions_array = torch.stack(actions).detach().numpy()
 

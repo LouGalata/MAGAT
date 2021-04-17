@@ -47,32 +47,36 @@ class CriticNetwork(nn.Module):
                     nheads=4,
                     alpha=0.1)
 
-        # self.gat2 = GAT(nfeat=input_dim,
-        #             nhid=hidden_gat_dim,
-        #             nclass=input_dim,
-        #             dropout=0.0,
-        #             nheads=4,
-        #             alpha=0.1)
+        self.gat2 = GAT(nfeat=input_dim,
+                    nhid=hidden_gat_dim,
+                    nclass=input_dim,
+                    dropout=0.0,
+                    nheads=4,
+                    alpha=0.1)
 
-        dense_input_dim = input_dim * 5 * 2 # num_agents * res connections
+        # dense_input_dim = input_dim * 5 * 2 # num_agents * res connections
+        dense_input_dim = input_dim * 5 * 2
         self.fc1 = nn.Linear(dense_input_dim, hidden_in_dim)
         self.fc2 = nn.Linear(hidden_in_dim, hidden_out_dim)
         self.fc3 = nn.Linear(hidden_out_dim, output_dim)
-        self.nonlin = f.relu  # leaky_relu
+        # self.fc3 = nn.Linear(hidden_in_dim, output_dim)
+        # self.nonlin = f.relu  # leaky_relu
+        self.nonlin = f.leaky_relu
         self.actor = actor
         # self.reset_parameters()
 
     def reset_parameters(self):
         self.gat.weight.data.uniform_(*hidden_init(self.gat))
-        # self.gat2.weight.data.uniform_(*hidden_init(self.fc1))
+        self.gat2.weight.data.uniform_(*hidden_init(self.gat2))
         self.fc1.weight.data.uniform_(*hidden_init(self.fc1))
         self.fc2.weight.data.uniform_(*hidden_init(self.fc2))
         self.fc3.weight.data.uniform_(-1e-3, 1e-3)
 
     def forward(self, x, adj):
         gat = self.gat(x, adj)
+        gat = self.gat2(gat, adj)
         resgat = torch.cat((x, gat), dim=-1)  # review
-        flatten = torch.flatten(resgat, start_dim=1)
+        flatten = torch.flatten(gat, start_dim=1)
         h1 = self.nonlin(self.fc1(flatten))
         h2 = self.nonlin(self.fc2(h1))
         h3 = (self.fc3(h2))

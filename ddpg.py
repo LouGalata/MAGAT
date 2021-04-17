@@ -9,9 +9,6 @@ from networkforgat import ActorNetwork, CriticNetwork
 from utilities import hard_update
 
 
-# device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-# device = 'cpu'
-
 class DDPGAgent():
     def __init__(self, in_actor, hidden_in_actor, hidden_out_actor, out_actor, in_critic, hidden_in_critic,
                  hidden_out_critic, lr_actor=1.0e-2, lr_critic=1.0e-2, weight_decay=1.0e-5, device='cuda:0'):
@@ -20,6 +17,8 @@ class DDPGAgent():
         hidden_gat_dim = 64
         self.actor = ActorNetwork(in_actor, hidden_in_actor, hidden_out_actor, out_actor, actor=True).to(device)
         self.critic = CriticNetwork(in_critic, hidden_gat_dim, hidden_in_critic, hidden_out_critic, 1).to(device)
+        # print("actor parameters are: " + str(self.count_parameters(self.actor)))
+        # print("critic parameters are: " + str(self.count_parameters(self.critic)))
         self.target_actor = ActorNetwork(in_actor, hidden_in_actor, hidden_out_actor, out_actor, actor=True).to(device)
         self.target_critic = CriticNetwork(in_critic, hidden_gat_dim, hidden_in_critic, hidden_out_critic, 1).to(device)
 
@@ -44,3 +43,6 @@ class DDPGAgent():
         action = self.target_actor(obs).cpu() + noise * self.noise.noise()
         action = action.clamp(-1, 1)
         return action
+
+    def count_parameters(self, model):
+        return sum(p.numel() for p in model.parameters() if p.requires_grad)

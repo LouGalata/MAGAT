@@ -6,15 +6,15 @@ from ddpg import DDPGAgent
 import torch
 from scipy.spatial import cKDTree
 
-from utilities import soft_update, transpose_to_tensor, transpose_list, gumbel_softmax
+from utilities import soft_update, transpose_to_tensor, transpose_list, gumbel_softmax, register_hooks
 import numpy as np
 
 # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-device = torch.device("cuda:0" if True else "cpu")
+device = torch.device("cuda:0" if False else "cpu")
 
 class MADDPG:
     def __init__(self, num_agents=3, discount_factor=0.95, tau=0.02, lr_actor=1.0e-2, lr_critic=1.0e-2,
-                 weight_decay=1.0e-5):
+                 weight_decay=0.0):
         super(MADDPG, self).__init__()
 
         # critic input = obs_full + actions = 14+2+2+2=20
@@ -40,8 +40,8 @@ class MADDPG:
             DDPGAgent(in_actor, hidden_in_actor, hidden_out_actor, out_actor, in_critic, hidden_in_critic,
                       hidden_out_critic, lr_actor=lr_actor, lr_critic=lr_critic, weight_decay=weight_decay,
                       device=device) for _ in range(num_agents)]
-        # self.maddpg_agent = [DDPGAgent(14, 128, 128, 2, 48, 128, 128, lr_actor=lr_actor, lr_critic=lr_critic, weight_decay=weight_decay, device=device) for _ in range(num_agents)]
 
+        # self.maddpg_agent = [DDPGAgent(14, 128, 128, 2, 48, 128, 128, lr_actor=lr_actor, lr_critic=lr_critic, weight_decay=weight_decay, device=device) for _ in range(num_agents)]
         self.discount_factor = discount_factor
         self.tau = tau
         self.iter = 0
@@ -77,11 +77,12 @@ class MADDPG:
         """
         k_lst = [2, 3]
         points = [i[2:4] for i in arr]
-        adj = np.zeros((no_agents, no_agents), dtype=float)
+        adj = np.ones((no_agents, no_agents), dtype=float)
         tree = cKDTree(points)
         for cnt, row in enumerate(points):
             dd, ii = tree.query(row, k=k_lst)
             adj[cnt][ii] = 1
+        adj = np.fill_diagonal(adj, 0)
         return adj
 
     def update(self, samples, agent_number, logger):
@@ -108,7 +109,8 @@ class MADDPG:
         # obs_full = torch.stack(obs_full)
         # next_obs_full = torch.stack(next_obs_full)
 
-        adj = [self.get_adj(i) for i in np.swapaxes(np.array([x.numpy() for x in obs]), 1, 0)]
+        # adj = [self.get_adj(i) for i in np.swapaxes(np.array([x.numpy() for x in obs]), 1, 0)]
+        adj = np.ones((len(obs[0]), len(obs), len(obs)), dtype=float)
         adj = torch.Tensor(adj).to(device)
         obs_full = torch.cat(obs, dim=1)
         next_obs_full = torch.cat(next_obs, dim=1)
@@ -117,6 +119,16 @@ class MADDPG:
 
         agent = self.maddpg_agent[agent_number]
         agent.critic_optimizer.zero_grad()
+
+        non_zeros = 0
+        for name, param in agent.critic.gat2.named_parameters():
+            if 'out_att.W' in name:
+                x = param.detach()
+                x[x < 0] = 0
+                print(x.cpu().numpy())
+                non_zeros = np.count_nonzero(x.cpu().numpy())
+
+
 
         # ---------------------------- update critic ---------------------------- #
         # Get predicted next-state actions and Q values from target models
@@ -158,10 +170,12 @@ class MADDPG:
         loss_mse = torch.nn.MSELoss()
         critic_loss = loss_mse(q, y.detach())
 
+        # CHECK IF EXPLODING GRADIENTS IS HAPPENING
+        # register_hooks(critic_loss)
         # Minimize the loss
         critic_loss.backward()
         torch.nn.utils.clip_grad_norm_(agent.critic.parameters(), 0.5)
-        torch.nn.utils.clip_grad_value_(agent.critic.parameters(), 1.0)
+        # torch.nn.utils.clip_grad_value_(agent.critic.parameters(), 1.0)
         agent.critic_optimizer.step()
 
         # ---------------------------- update actor ---------------------------- #
@@ -203,8 +217,11 @@ class MADDPG:
         cl = critic_loss.cpu().detach().item()
         logger.add_scalars('agent%i/losses' % agent_number,
                            {'critic loss': cl,
-                            'actor_loss': al},
+                            'actor_loss': al,
+                            'non_zeros' : non_zeros
+                            },
                            self.iter)
+
         # return (new_priorities)
 
     def update_targets(self):
